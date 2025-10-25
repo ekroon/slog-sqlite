@@ -90,9 +90,7 @@ func (h *SQLiteHandler) initSchema() error {
 	END;
 	`
 
-	_, ftsErr := h.db.Exec(ftsSchema)
-	if ftsErr != nil {
-	}
+	_, _ = h.db.Exec(ftsSchema)
 
 	return nil
 }

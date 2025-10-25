@@ -14,7 +14,7 @@ import (
 
 func TestNewSQLiteHandler(t *testing.T) {
 	dbPath := "test_logs.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelDebug,
@@ -23,7 +23,7 @@ func TestNewSQLiteHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	if handler.db == nil {
 		t.Error("Database connection is nil")
@@ -32,7 +32,7 @@ func TestNewSQLiteHandler(t *testing.T) {
 
 func TestHandlerLogging(t *testing.T) {
 	dbPath := "test_logs.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelDebug,
@@ -41,7 +41,7 @@ func TestHandlerLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	logger := slog.New(handler)
 
@@ -96,7 +96,7 @@ func TestHandlerLogging(t *testing.T) {
 
 func TestQueryLogs(t *testing.T) {
 	dbPath := "test_logs.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelDebug,
@@ -105,7 +105,7 @@ func TestQueryLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	logger := slog.New(handler)
 
@@ -155,7 +155,7 @@ func TestQueryLogs(t *testing.T) {
 
 func TestFullTextSearch(t *testing.T) {
 	dbPath := "test_logs.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelDebug,
@@ -164,7 +164,7 @@ func TestFullTextSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	logger := slog.New(handler)
 
@@ -198,7 +198,7 @@ func TestFullTextSearch(t *testing.T) {
 
 func TestWithAttrs(t *testing.T) {
 	dbPath := "test_logs.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelDebug,
@@ -207,7 +207,7 @@ func TestWithAttrs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	handlerWithAttrs := handler.WithAttrs([]slog.Attr{
 		slog.String("app", "test-app"),
@@ -241,7 +241,7 @@ func TestWithAttrs(t *testing.T) {
 
 func TestEnabled(t *testing.T) {
 	dbPath := "test_logs.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelInfo,
@@ -250,7 +250,7 @@ func TestEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	ctx := context.Background()
 
@@ -273,7 +273,7 @@ func TestDirectSQLiteQuery(t *testing.T) {
 	}
 
 	dbPath := "test_direct_query.db"
-	defer os.Remove(dbPath)
+	defer func() { _ = os.Remove(dbPath) }()
 
 	handler, err := NewSQLiteHandler(&Options{
 		Level:    slog.LevelDebug,
@@ -290,7 +290,7 @@ func TestDirectSQLiteQuery(t *testing.T) {
 	logger.Debug("Processing batch", slog.Int("batch_id", 42))
 	logger.Warn("Slow query detected", slog.String("query", "SELECT * FROM users"))
 
-	handler.Close()
+	_ = handler.Close()
 	time.Sleep(50 * time.Millisecond)
 
 	t.Run("Count total logs", func(t *testing.T) {

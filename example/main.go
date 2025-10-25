@@ -18,7 +18,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)

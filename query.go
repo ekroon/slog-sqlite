@@ -90,7 +90,7 @@ func (h *SQLiteHandler) QueryLogs(opts QueryOptions) ([]LogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []LogEntry
 	for rows.Next() {
@@ -140,10 +140,10 @@ func (h *SQLiteHandler) QueryLogs(opts QueryOptions) ([]LogEntry, error) {
 		}
 
 		if attrsJSON.Valid && attrsJSON.String != "" {
-			json.Unmarshal([]byte(attrsJSON.String), &log.Attributes)
+			_ = json.Unmarshal([]byte(attrsJSON.String), &log.Attributes)
 		}
 		if groupsJSON.Valid && groupsJSON.String != "" {
-			json.Unmarshal([]byte(groupsJSON.String), &log.Groups)
+			_ = json.Unmarshal([]byte(groupsJSON.String), &log.Groups)
 		}
 
 		logs = append(logs, log)
@@ -171,7 +171,7 @@ func (h *SQLiteHandler) GetErrorSummary(limit int) ([]map[string]interface{}, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var summaries []map[string]interface{}
 	for rows.Next() {
@@ -223,7 +223,7 @@ func (h *SQLiteHandler) GetContextAnalysis() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	levelCounts := make(map[string]int)
 	for rows.Next() {
@@ -237,7 +237,7 @@ func (h *SQLiteHandler) GetContextAnalysis() (map[string]interface{}, error) {
 
 	totalQuery := `SELECT COUNT(*) FROM logs`
 	var total int
-	h.db.QueryRow(totalQuery).Scan(&total)
+	_ = h.db.QueryRow(totalQuery).Scan(&total)
 
 	errorRateQuery := `
 		SELECT 
@@ -246,7 +246,7 @@ func (h *SQLiteHandler) GetContextAnalysis() (map[string]interface{}, error) {
 		FROM logs
 	`
 	var errorRate float64
-	h.db.QueryRow(errorRateQuery).Scan(&errorRate)
+	_ = h.db.QueryRow(errorRateQuery).Scan(&errorRate)
 
 	return map[string]interface{}{
 		"total_logs":   total,
