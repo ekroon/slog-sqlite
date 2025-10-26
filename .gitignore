@@ -1,0 +1,13 @@
+# Test databases
+*.db
+
+# Coverage reports
+coverage.txt
+coverage.out
+
+# Binaries
+example/example
+example/main
+
+# Temporary files
+/tmp/
