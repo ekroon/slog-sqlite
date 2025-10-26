@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -18,6 +19,7 @@ type SQLiteHandler struct {
 	level  slog.Level
 	attrs  []slog.Attr
 	groups []string
+	wg     *sync.WaitGroup
 }
 
 type Options struct {
@@ -38,6 +40,7 @@ func NewSQLiteHandler(opts *Options) (*SQLiteHandler, error) {
 	handler := &SQLiteHandler{
 		db:    db,
 		level: opts.Level,
+		wg:    &sync.WaitGroup{},
 	}
 
 	if err := handler.initSchema(); err != nil {
@@ -100,6 +103,7 @@ func (h *SQLiteHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *SQLiteHandler) Handle(ctx context.Context, r slog.Record) error {
+	// Extract source information in the main thread as it relies on execution context
 	var sourceFile string
 	var sourceLine int
 	var sourceFunction string
@@ -112,54 +116,60 @@ func (h *SQLiteHandler) Handle(ctx context.Context, r slog.Record) error {
 		sourceFunction = f.Function
 	}
 
-	attrs := make(map[string]interface{})
+	// Process everything else in a goroutine to avoid blocking the caller
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
 
-	for _, attr := range h.attrs {
-		attrs[attr.Key] = attr.Value.Any()
-	}
+		attrs := make(map[string]interface{})
 
-	r.Attrs(func(a slog.Attr) bool {
-		attrs[a.Key] = a.Value.Any()
-		return true
-	})
+		for _, attr := range h.attrs {
+			attrs[attr.Key] = attr.Value.Any()
+		}
 
-	attrsJSON, _ := json.Marshal(attrs)
-	groupsJSON, _ := json.Marshal(h.groups)
+		r.Attrs(func(a slog.Attr) bool {
+			attrs[a.Key] = a.Value.Any()
+			return true
+		})
 
-	var errorMessage string
-	var stackTrace string
-	if err, ok := attrs["error"].(error); ok {
-		errorMessage = err.Error()
-	}
-	if stack, ok := attrs["stack"].(string); ok {
-		stackTrace = stack
-	}
+		attrsJSON, _ := json.Marshal(attrs)
+		groupsJSON, _ := json.Marshal(h.groups)
 
-	contextChain := h.buildContextChain()
+		var errorMessage string
+		var stackTrace string
+		if err, ok := attrs["error"].(error); ok {
+			errorMessage = err.Error()
+		}
+		if stack, ok := attrs["stack"].(string); ok {
+			stackTrace = stack
+		}
 
-	query := `
-		INSERT INTO logs (
-			timestamp, level, message, source_file, source_line, 
-			source_function, attributes, groups, context_chain,
-			error_message, stack_trace
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
+		contextChain := h.buildContextChain()
 
-	_, err := h.db.Exec(query,
-		r.Time.UTC().Format(time.RFC3339Nano),
-		r.Level.String(),
-		r.Message,
-		sourceFile,
-		sourceLine,
-		sourceFunction,
-		string(attrsJSON),
-		string(groupsJSON),
-		contextChain,
-		errorMessage,
-		stackTrace,
-	)
+		query := `
+			INSERT INTO logs (
+				timestamp, level, message, source_file, source_line, 
+				source_function, attributes, groups, context_chain,
+				error_message, stack_trace
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`
 
-	return err
+		_, _ = h.db.Exec(query,
+			r.Time.UTC().Format(time.RFC3339Nano),
+			r.Level.String(),
+			r.Message,
+			sourceFile,
+			sourceLine,
+			sourceFunction,
+			string(attrsJSON),
+			string(groupsJSON),
+			contextChain,
+			errorMessage,
+			stackTrace,
+		)
+	}()
+
+	return nil
 }
 
 func (h *SQLiteHandler) buildContextChain() string {
@@ -175,6 +185,7 @@ func (h *SQLiteHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		level:  h.level,
 		attrs:  append(h.attrs, attrs...),
 		groups: h.groups,
+		wg:     h.wg,
 	}
 }
 
@@ -184,9 +195,11 @@ func (h *SQLiteHandler) WithGroup(name string) slog.Handler {
 		level:  h.level,
 		attrs:  h.attrs,
 		groups: append(h.groups, name),
+		wg:     h.wg,
 	}
 }
 
 func (h *SQLiteHandler) Close() error {
+	h.wg.Wait()
 	return h.db.Close()
 }

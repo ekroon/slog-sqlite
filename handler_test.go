@@ -2,6 +2,7 @@ package slogsqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -113,7 +114,7 @@ func TestQueryLogs(t *testing.T) {
 	logger.Debug("Debug message")
 	logger.Error("Error message")
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	t.Run("Query all logs", func(t *testing.T) {
 		logs, err := handler.QueryLogs(QueryOptions{})
@@ -436,4 +437,112 @@ func TestDirectSQLiteQuery(t *testing.T) {
 			t.Errorf("Expected logs_fts table, got: %s", result)
 		}
 	})
+}
+
+func TestAsyncHandling(t *testing.T) {
+	dbPath := "test_async.db"
+	defer func() { _ = os.Remove(dbPath) }()
+
+	handler, err := NewSQLiteHandler(&Options{
+		Level:    slog.LevelDebug,
+		Database: dbPath,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	logger := slog.New(handler)
+
+	// Test that logging is non-blocking
+	start := time.Now()
+	for i := 0; i < 100; i++ {
+		logger.Info("Test message", slog.Int("iteration", i))
+	}
+	elapsed := time.Since(start)
+
+	// Logging 100 messages should be very fast if it's truly async
+	// If it were synchronous with DB writes, it would take much longer
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("Logging took too long (%v), suggesting it's not async", elapsed)
+	}
+
+	// Close the handler to ensure all goroutines complete
+	if err := handler.Close(); err != nil {
+		t.Fatalf("Failed to close handler: %v", err)
+	}
+
+	// Verify all logs were written
+	logs, err := handler.QueryLogs(QueryOptions{})
+	if err != nil {
+		// After close, we can't query, so we'll check the database directly
+		db, err := sql.Open("sqlite3", dbPath)
+		if err != nil {
+			t.Fatalf("Failed to open database: %v", err)
+		}
+		defer func() { _ = db.Close() }()
+
+		var count int
+		err = db.QueryRow("SELECT COUNT(*) FROM logs").Scan(&count)
+		if err != nil {
+			t.Fatalf("Failed to count logs: %v", err)
+		}
+
+		if count != 100 {
+			t.Errorf("Expected 100 logs, got %d", count)
+		}
+	} else {
+		if len(logs) != 100 {
+			t.Errorf("Expected 100 logs, got %d", len(logs))
+		}
+	}
+}
+
+func TestSourceInformation(t *testing.T) {
+	dbPath := "test_source.db"
+	defer func() { _ = os.Remove(dbPath) }()
+
+	handler, err := NewSQLiteHandler(&Options{
+		Level:    slog.LevelDebug,
+		Database: dbPath,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+	defer func() { _ = handler.Close() }()
+
+	logger := slog.New(handler)
+
+	// Log a message
+	logger.Info("Test message for source info")
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify source information was captured correctly
+	logs, err := handler.QueryLogs(QueryOptions{
+		Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("Failed to query logs: %v", err)
+	}
+
+	if len(logs) == 0 {
+		t.Fatal("No logs found")
+	}
+
+	log := logs[0]
+
+	// Verify source file contains the test file name
+	if !strings.Contains(log.SourceFile, "handler_test.go") {
+		t.Errorf("Expected source file to contain 'handler_test.go', got: %s", log.SourceFile)
+	}
+
+	// Verify source line is set
+	if log.SourceLine == 0 {
+		t.Error("Source line should not be 0")
+	}
+
+	// Verify source function is set
+	if log.SourceFunction == "" {
+		t.Error("Source function should not be empty")
+	}
 }
